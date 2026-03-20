@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione per Render con sintassi corretta
+# app.py - Versione semplificata con operazioni separate
 
 import requests
 import json
@@ -16,8 +16,6 @@ API_KEYS = os.environ.get('BROWSERLESS_KEYS', '').split(',')
 if not API_KEYS or API_KEYS[0] == '':
     API_KEYS = [
         "2UBQ5qEPkTsCBv63a4077ae6c54e5490f1efd231f724e110f",
-        "2UBQ8GwsajXwbXs10e72471480af4adaeb28a5a6a01ac89a7",
-        "2UBQFmSYHD4NZGdb2f0eedc0e05b5de53a6746218bcdc139a",
     ]
 
 BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
@@ -41,66 +39,133 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
+    """Crea account usando browserless - approccio step by step"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # La stringa JavaScript deve essere su una riga singola per evitare problemi di indentazione
-    js_function = "async () => { await new Promise(r => setTimeout(r, 2000)); const usernameField = document.querySelector('#reg_form #name'); if (usernameField) { usernameField.value = arguments[0]; usernameField.dispatchEvent(new Event('input', { bubbles: true })); } const emailField = document.querySelector('#reg_form #email'); if (emailField) { emailField.value = arguments[1]; emailField.dispatchEvent(new Event('input', { bubbles: true })); } const loginField = document.querySelector('#reg_form #login'); if (loginField) { loginField.value = arguments[0]; loginField.dispatchEvent(new Event('input', { bubbles: true })); } const passField = document.querySelector('#reg_form #pass'); if (passField) { passField.value = arguments[2]; passField.dispatchEvent(new Event('input', { bubbles: true })); } const cpassField = document.querySelector('#reg_form #cpass'); if (cpassField) { cpassField.value = arguments[2]; cpassField.dispatchEvent(new Event('input', { bubbles: true })); } await new Promise(r => setTimeout(r, 3000)); const submitBtn = document.querySelector('#reg_form input[type=\"submit\"], #reg_form button[type=\"submit\"]'); if (submitBtn) { submitBtn.click(); } await new Promise(r => setTimeout(r, 5000)); return document.cookie; }"
-    
-    query = f"""
-    mutation {{
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {{
+    # Passo 1: Vai alla pagina e clicca sul link di registrazione
+    step1_query = """
+    mutation {
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {
         status
         url
-      }}
-      
-      click(selector: "a[href*='join_popup_show']") {{
+      }
+      click(selector: "a[href*='join_popup_show']") {
         clicked
-      }}
-      
-      waitFor(selector: "#reg_form", timeout: 30000) {{
+      }
+      waitFor(selector: "#reg_form", timeout: 30000) {
         exists
-      }}
-      
-      solve(type: cloudflare, timeout: 60000) {{
-        found
-        solved
-        token
-        time
-      }}
-      
-      evaluate(expression: "{js_function}", args: ["{username}", "{email}", "{PASSWORD}"]) {{
-        value
-      }}
-      
-      screenshot(fullPage: true) {{
-        base64
-      }}
-    }}
+      }
+    }
     """
     
     try:
-        response = requests.post(
-            bql_url,
-            json={"query": query},
-            headers={"Content-Type": "application/json"},
-            timeout=180
-        )
+        # Step 1: Navigazione e click
+        log("📡 Step 1: Navigazione e apertura form...")
+        response = requests.post(bql_url, json={"query": step1_query}, timeout=60)
         
         if response.status_code != 200:
-            log(f"❌ Errore HTTP: {response.status_code}")
-            log(f"   {response.text[:200]}")
+            log(f"❌ Step 1 fallito: {response.status_code}")
+            return None, None
+        
+        data = response.json()
+        if "errors" in data:
+            log(f"❌ Errori Step 1: {data['errors']}")
+            return None, None
+        
+        # Passo 2: Risolvi Turnstile
+        log("🛡️ Step 2: Risoluzione Turnstile...")
+        step2_query = """
+        mutation {
+          solve(type: cloudflare, timeout: 60000) {
+            found
+            solved
+            token
+            time
+          }
+        }
+        """
+        
+        response = requests.post(bql_url, json={"query": step2_query}, timeout=90)
+        
+        if response.status_code != 200:
+            log(f"❌ Step 2 fallito: {response.status_code}")
+            return None, None
+        
+        data = response.json()
+        if "errors" in data:
+            log(f"❌ Errori Step 2: {data['errors']}")
+            return None, None
+        
+        solve_info = data.get("data", {}).get("solve", {})
+        
+        if not solve_info.get("solved"):
+            log("❌ Turnstile non risolto")
+            return None, None
+        
+        log(f"✅ Turnstile risolto in {solve_info.get('time')}ms")
+        
+        # Passo 3: Compila e invia il form
+        log("📝 Step 3: Compilazione e invio form...")
+        
+        # JavaScript per compilare il form - versione semplificata
+        js_code = f"""
+        async () => {{
+          await new Promise(r => setTimeout(r, 1000));
+          
+          const nameField = document.querySelector('#reg_form #name');
+          if (nameField) nameField.value = '{username}';
+          
+          const emailField = document.querySelector('#reg_form #email');
+          if (emailField) emailField.value = '{email}';
+          
+          const loginField = document.querySelector('#reg_form #login');
+          if (loginField) loginField.value = '{username}';
+          
+          const passField = document.querySelector('#reg_form #pass');
+          if (passField) passField.value = '{PASSWORD}';
+          
+          const cpassField = document.querySelector('#reg_form #cpass');
+          if (cpassField) cpassField.value = '{PASSWORD}';
+          
+          await new Promise(r => setTimeout(r, 2000));
+          
+          const submitBtn = document.querySelector('#reg_form input[type="submit"]');
+          if (submitBtn) submitBtn.click();
+          
+          await new Promise(r => setTimeout(r, 5000));
+          
+          return document.cookie;
+        }}
+        """
+        
+        step3_query = f"""
+        mutation {{
+          evaluate(expression: {json.dumps(js_code)}) {{
+            value
+          }}
+          screenshot(fullPage: true) {{
+            base64
+          }}
+        }}
+        """
+        
+        response = requests.post(bql_url, json={"query": step3_query}, timeout=60)
+        
+        if response.status_code != 200:
+            log(f"❌ Step 3 fallito: {response.status_code}")
             return None, None
         
         data = response.json()
         
         if "errors" in data:
-            log(f"❌ Errori: {data['errors']}")
+            log(f"❌ Errori Step 3: {data['errors']}")
             return None, None
         
         result = data.get("data", {})
         
+        # Ottieni cookie
         cookies_str = result.get("evaluate", {}).get("value", "")
         cookies = {}
         for cookie in cookies_str.split(";"):
@@ -108,22 +173,26 @@ def create_account_via_browserless(api_key, username, email):
                 key, val = cookie.strip().split("=", 1)
                 cookies[key] = val
         
+        # Salva screenshot
         screenshot_data = result.get("screenshot", {}).get("base64")
         if screenshot_data:
             filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
             with open(filename, "wb") as f:
                 f.write(base64.b64decode(screenshot_data))
-            log(f"📸 Screenshot: {filename}")
+            log(f"📸 Screenshot salvato")
         
         if 'user_id' in cookies:
             log(f"✅ Registrazione riuscita! user_id: {cookies['user_id']}")
             return True, cookies
         else:
-            log(f"❌ Registrazione fallita")
+            log(f"❌ Registrazione fallita - user_id non trovato")
+            log(f"   Cookie ricevuti: {list(cookies.keys())}")
             return False, cookies
             
     except Exception as e:
         log(f"❌ Errore: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -156,7 +225,7 @@ def save_account(username, email, cookies):
 
 def main():
     log("=" * 60)
-    log("🚀 BROWSERLESS ACCOUNT CREATOR")
+    log("🚀 BROWSERLESS ACCOUNT CREATOR (STEP BY STEP)")
     log("=" * 60)
     
     setup_output_dir()
@@ -193,8 +262,8 @@ def main():
                 success = True
                 break
             else:
-                log(f"⚠️ Fallito con questa chiave, provo la prossima...")
-                time.sleep(5)
+                log(f"⚠️ Fallito con questa chiave")
+                time.sleep(3)
         
         if not success:
             log(f"❌ Account {i+1} fallito")
@@ -207,7 +276,6 @@ def main():
     log("\n" + "=" * 60)
     log(f"🏁 PROCESSO COMPLETATO!")
     log(f"✅ Account creati: {success_count}/{num_accounts}")
-    log(f"💾 File salvati in: {OUTPUT_DIR}")
     log("=" * 60)
 
 if __name__ == "__main__":
