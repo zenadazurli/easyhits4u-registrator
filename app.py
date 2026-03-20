@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione con timeout aumentati e log dettagliati
+# app.py - Versione con query invece di mutation
 
 import requests
 import json
@@ -41,24 +41,20 @@ def create_account_via_browserless(api_key, username, email):
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Script JavaScript semplificato per debug
-    js_function = f"""
-    async () => {{
-        console.log('1. Navigazione alla pagina...');
+    # Proviamo con query invece di mutation
+    # E usiamo solo evaluate per tutto
+    js_script = f"""
+    (async () => {{
+        // Navigazione
         window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
         await new Promise(r => setTimeout(r, 8000));
         
-        console.log('2. Cerco link registrazione...');
+        // Clicca join
         const joinLink = document.querySelector('a[href*="join_popup_show"]');
-        if (joinLink) {{
-            console.log('3. Clicco sul link');
-            joinLink.click();
-            await new Promise(r => setTimeout(r, 5000));
-        }} else {{
-            console.log('Link non trovato!');
-        }}
+        if (joinLink) joinLink.click();
+        await new Promise(r => setTimeout(r, 5000));
         
-        console.log('4. Compilo form...');
+        // Compila form
         const nameField = document.querySelector('#reg_form #name');
         if (nameField) nameField.value = '{username}';
         
@@ -74,33 +70,24 @@ def create_account_via_browserless(api_key, username, email):
         const cpassField = document.querySelector('#reg_form #cpass');
         if (cpassField) cpassField.value = '{PASSWORD}';
         
-        console.log('5. Attendo Turnstile...');
+        // Attendi Turnstile
         await new Promise(r => setTimeout(r, 15000));
         
-        console.log('6. Clicco submit...');
+        // Submit
         const submitBtn = document.querySelector('#reg_form input[type="submit"]');
-        if (submitBtn) {{
-            submitBtn.click();
-            await new Promise(r => setTimeout(r, 8000));
-        }}
+        if (submitBtn) submitBtn.click();
+        await new Promise(r => setTimeout(r, 8000));
         
-        console.log('7. Restituisco cookie...');
         return document.cookie;
-    }}
+    }})()
     """
     
-    # Usa function: con timeout esplicito
+    # Usa query invece di mutation
     query = f"""
-    mutation {{
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 90000) {{
-        status
-        url
-      }}
-      
-      evaluate(function: {json.dumps(js_function)}, timeout: 120000) {{
+    query {{
+      evaluate(script: {json.dumps(js_script)}) {{
         value
       }}
-      
       screenshot(fullPage: true) {{
         base64
       }}
@@ -108,7 +95,7 @@ def create_account_via_browserless(api_key, username, email):
     """
     
     try:
-        log("📡 Invio richiesta a browserless (timeout 180s)...")
+        log("📡 Invio richiesta a browserless...")
         start_time = time.time()
         
         response = requests.post(
@@ -135,14 +122,9 @@ def create_account_via_browserless(api_key, username, email):
         
         result = data.get("data", {})
         
-        # Log della navigazione
-        goto_info = result.get("goto", {})
-        log(f"🌐 Navigazione: {goto_info.get('status')} - {goto_info.get('url')}")
-        
         # Ottieni cookie
         evaluate_result = result.get("evaluate", {})
         cookies_str = evaluate_result.get("value", "")
-        log(f"🍪 Cookie ricevuti: {len(cookies_str)} caratteri")
         
         cookies = {}
         for cookie in cookies_str.split(";"):
@@ -158,23 +140,17 @@ def create_account_via_browserless(api_key, username, email):
             filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
             with open(filename, "wb") as f:
                 f.write(base64.b64decode(screenshot_data))
-            log(f"📸 Screenshot salvato: {filename}")
+            log(f"📸 Screenshot salvato")
         
         if 'user_id' in cookies:
-            log(f"✅✅✅ REGISTRAZIONE RIUSCITA!")
-            log(f"   user_id: {cookies['user_id']}")
+            log(f"✅✅✅ REGISTRAZIONE RIUSCITA! user_id: {cookies['user_id']}")
             return True, cookies
         else:
-            log(f"❌ Registrazione fallita - user_id non trovato nei cookie")
+            log(f"❌ Registrazione fallita - user_id non trovato")
             return False, cookies
             
-    except requests.exceptions.Timeout:
-        log(f"❌ Timeout dopo 180 secondi")
-        return None, None
     except Exception as e:
         log(f"❌ Errore: {e}")
-        import traceback
-        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
