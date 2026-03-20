@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione ultra-semplificata con solo evaluate
+# app.py - Versione con sintassi BrowserQL corretta
 
 import requests
 import json
@@ -38,29 +38,29 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando solo evaluate per tutto"""
+    """Crea account usando browserless con sintassi corretta"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Un unico script JavaScript che fa tutto
+    # Script JavaScript che fa tutto - usando la sintassi corretta
     js_script = f"""
     (async () => {{
-        // 1. Naviga alla pagina
+        // Naviga alla pagina
         window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
         await new Promise(r => setTimeout(r, 5000));
         
-        // 2. Clicca sul link di registrazione
+        // Clicca sul link di registrazione
         const joinLink = document.querySelector('a[href*="join_popup_show"]');
         if (joinLink) {{
             joinLink.click();
             await new Promise(r => setTimeout(r, 3000));
         }}
         
-        // 3. Attendi il form
+        // Attendi il form
         await new Promise(r => setTimeout(r, 2000));
         
-        // 4. Compila il form
+        // Compila il form
         const nameField = document.querySelector('#reg_form #name');
         if (nameField) nameField.value = '{username}';
         
@@ -76,26 +76,33 @@ def create_account_via_browserless(api_key, username, email):
         const cpassField = document.querySelector('#reg_form #cpass');
         if (cpassField) cpassField.value = '{PASSWORD}';
         
-        // 5. Attendi che Turnstile venga risolto (se presente)
-        await new Promise(r => setTimeout(r, 5000));
+        // Attendi che Turnstile venga risolto
+        await new Promise(r => setTimeout(r, 8000));
         
-        // 6. Clicca submit
+        // Clicca submit
         const submitBtn = document.querySelector('#reg_form input[type="submit"]');
         if (submitBtn) {{
             submitBtn.click();
             await new Promise(r => setTimeout(r, 5000));
         }}
         
-        // 7. Restituisci i cookie
+        // Restituisci i cookie
         return document.cookie;
     }})()
     """
     
+    # Sintassi corretta per BrowserQL - usa "script" non "expression"
     query = f"""
     mutation {{
-      evaluate(expression: {json.dumps(js_script)}, awaitPromise: true, timeout: 120000) {{
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {{
+        status
+        url
+      }}
+      
+      evaluate(script: {json.dumps(js_script)}) {{
         value
       }}
+      
       screenshot(fullPage: true) {{
         base64
       }}
@@ -150,6 +157,8 @@ def create_account_via_browserless(api_key, username, email):
             
     except Exception as e:
         log(f"❌ Errore: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -182,7 +191,7 @@ def save_account(username, email, cookies):
 
 def main():
     log("=" * 60)
-    log("🚀 BROWSERLESS ACCOUNT CREATOR (SINGLE SCRIPT)")
+    log("🚀 BROWSERLESS ACCOUNT CREATOR")
     log("=" * 60)
     
     setup_output_dir()
