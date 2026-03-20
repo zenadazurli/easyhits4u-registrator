@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione con sintassi BrowserQL corretta
+# app.py - Versione definitiva con sintassi BrowserQL corretta
 
 import requests
 import json
@@ -38,12 +38,12 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando browserless con sintassi corretta"""
+    """Crea account usando browserless"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Script JavaScript che fa tutto - usando la sintassi corretta
+    # Script JavaScript completo
     js_script = f"""
     (async () => {{
         // Naviga alla pagina
@@ -56,9 +56,6 @@ def create_account_via_browserless(api_key, username, email):
             joinLink.click();
             await new Promise(r => setTimeout(r, 3000));
         }}
-        
-        // Attendi il form
-        await new Promise(r => setTimeout(r, 2000));
         
         // Compila il form
         const nameField = document.querySelector('#reg_form #name');
@@ -76,8 +73,8 @@ def create_account_via_browserless(api_key, username, email):
         const cpassField = document.querySelector('#reg_form #cpass');
         if (cpassField) cpassField.value = '{PASSWORD}';
         
-        // Attendi che Turnstile venga risolto
-        await new Promise(r => setTimeout(r, 8000));
+        // Attendi per Turnstile
+        await new Promise(r => setTimeout(r, 10000));
         
         // Clicca submit
         const submitBtn = document.querySelector('#reg_form input[type="submit"]');
@@ -91,10 +88,10 @@ def create_account_via_browserless(api_key, username, email):
     }})()
     """
     
-    # Sintassi corretta per BrowserQL - usa "script" non "expression"
+    # Sintassi BrowserQL corretta - SOLO script, niente expression o awaitPromise
     query = f"""
     mutation {{
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {{
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle) {{
         status
         url
       }}
@@ -110,7 +107,7 @@ def create_account_via_browserless(api_key, username, email):
     """
     
     try:
-        log("📡 Esecuzione script browserless...")
+        log("📡 Esecuzione script...")
         response = requests.post(
             bql_url,
             json={"query": query},
@@ -120,13 +117,14 @@ def create_account_via_browserless(api_key, username, email):
         
         if response.status_code != 200:
             log(f"❌ Errore HTTP: {response.status_code}")
-            log(f"   {response.text[:200]}")
             return None, None
         
         data = response.json()
         
         if "errors" in data:
-            log(f"❌ Errori: {data['errors']}")
+            # Stampa solo il primo errore per brevità
+            error_msg = data['errors'][0].get('message', 'Unknown error')
+            log(f"❌ Errore: {error_msg}")
             return None, None
         
         result = data.get("data", {})
@@ -151,14 +149,11 @@ def create_account_via_browserless(api_key, username, email):
             log(f"✅ Registrazione riuscita! user_id: {cookies['user_id']}")
             return True, cookies
         else:
-            log(f"❌ Registrazione fallita - user_id non trovato")
-            log(f"   Cookie: {cookies}")
+            log(f"❌ Registrazione fallita")
             return False, cookies
             
     except Exception as e:
         log(f"❌ Errore: {e}")
-        import traceback
-        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -228,7 +223,7 @@ def main():
                 success = True
                 break
             else:
-                log(f"⚠️ Fallito con questa chiave")
+                log(f"⚠️ Fallito, provo altra chiave...")
                 time.sleep(3)
         
         if not success:
