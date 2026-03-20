@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione con sintassi BrowserQL definitiva
+# app.py - Versione con timeout aumentati e log dettagliati
 
 import requests
 import json
@@ -41,16 +41,24 @@ def create_account_via_browserless(api_key, username, email):
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Script JavaScript
+    # Script JavaScript semplificato per debug
     js_function = f"""
     async () => {{
+        console.log('1. Navigazione alla pagina...');
         window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
-        await new Promise(r => setTimeout(r, 5000));
+        await new Promise(r => setTimeout(r, 8000));
         
+        console.log('2. Cerco link registrazione...');
         const joinLink = document.querySelector('a[href*="join_popup_show"]');
-        if (joinLink) joinLink.click();
-        await new Promise(r => setTimeout(r, 3000));
+        if (joinLink) {{
+            console.log('3. Clicco sul link');
+            joinLink.click();
+            await new Promise(r => setTimeout(r, 5000));
+        }} else {{
+            console.log('Link non trovato!');
+        }}
         
+        console.log('4. Compilo form...');
         const nameField = document.querySelector('#reg_form #name');
         if (nameField) nameField.value = '{username}';
         
@@ -66,25 +74,30 @@ def create_account_via_browserless(api_key, username, email):
         const cpassField = document.querySelector('#reg_form #cpass');
         if (cpassField) cpassField.value = '{PASSWORD}';
         
-        await new Promise(r => setTimeout(r, 10000));
+        console.log('5. Attendo Turnstile...');
+        await new Promise(r => setTimeout(r, 15000));
         
+        console.log('6. Clicco submit...');
         const submitBtn = document.querySelector('#reg_form input[type="submit"]');
-        if (submitBtn) submitBtn.click();
-        await new Promise(r => setTimeout(r, 5000));
+        if (submitBtn) {{
+            submitBtn.click();
+            await new Promise(r => setTimeout(r, 8000));
+        }}
         
+        console.log('7. Restituisco cookie...');
         return document.cookie;
     }}
     """
     
-    # Sintassi corretta: usa "function" non "script"
+    # Usa function: con timeout esplicito
     query = f"""
     mutation {{
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle) {{
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 90000) {{
         status
         url
       }}
       
-      evaluate(function: {json.dumps(js_function)}) {{
+      evaluate(function: {json.dumps(js_function)}, timeout: 120000) {{
         value
       }}
       
@@ -95,34 +108,49 @@ def create_account_via_browserless(api_key, username, email):
     """
     
     try:
-        log("📡 Esecuzione script...")
+        log("📡 Invio richiesta a browserless (timeout 180s)...")
+        start_time = time.time()
+        
         response = requests.post(
             bql_url,
             json={"query": query},
             headers={"Content-Type": "application/json"},
-            timeout=150
+            timeout=180
         )
+        
+        elapsed = time.time() - start_time
+        log(f"⏱️ Richiesta completata in {elapsed:.1f} secondi")
         
         if response.status_code != 200:
             log(f"❌ Errore HTTP: {response.status_code}")
+            log(f"   Risposta: {response.text[:500]}")
             return None, None
         
         data = response.json()
         
         if "errors" in data:
             error_msg = data['errors'][0].get('message', 'Unknown error')
-            log(f"❌ Errore: {error_msg}")
+            log(f"❌ Errore GraphQL: {error_msg}")
             return None, None
         
         result = data.get("data", {})
         
+        # Log della navigazione
+        goto_info = result.get("goto", {})
+        log(f"🌐 Navigazione: {goto_info.get('status')} - {goto_info.get('url')}")
+        
         # Ottieni cookie
-        cookies_str = result.get("evaluate", {}).get("value", "")
+        evaluate_result = result.get("evaluate", {})
+        cookies_str = evaluate_result.get("value", "")
+        log(f"🍪 Cookie ricevuti: {len(cookies_str)} caratteri")
+        
         cookies = {}
         for cookie in cookies_str.split(";"):
             if "=" in cookie:
                 key, val = cookie.strip().split("=", 1)
                 cookies[key] = val
+        
+        log(f"🔑 Cookie keys: {list(cookies.keys())}")
         
         # Salva screenshot
         screenshot_data = result.get("screenshot", {}).get("base64")
@@ -130,17 +158,23 @@ def create_account_via_browserless(api_key, username, email):
             filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
             with open(filename, "wb") as f:
                 f.write(base64.b64decode(screenshot_data))
-            log(f"📸 Screenshot salvato")
+            log(f"📸 Screenshot salvato: {filename}")
         
         if 'user_id' in cookies:
-            log(f"✅ Registrazione riuscita! user_id: {cookies['user_id']}")
+            log(f"✅✅✅ REGISTRAZIONE RIUSCITA!")
+            log(f"   user_id: {cookies['user_id']}")
             return True, cookies
         else:
-            log(f"❌ Registrazione fallita - user_id non trovato")
+            log(f"❌ Registrazione fallita - user_id non trovato nei cookie")
             return False, cookies
             
+    except requests.exceptions.Timeout:
+        log(f"❌ Timeout dopo 180 secondi")
+        return None, None
     except Exception as e:
         log(f"❌ Errore: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -211,7 +245,7 @@ def main():
                 success = True
                 break
             else:
-                log(f"⚠️ Fallito, provo altra chiave...")
+                log(f"⚠️ Fallito con questa chiave")
                 time.sleep(3)
         
         if not success:
