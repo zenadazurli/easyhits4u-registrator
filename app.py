@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione semplificata con operazioni separate
+# app.py - Versione ultra-semplificata con solo evaluate
 
 import requests
 import json
@@ -20,7 +20,6 @@ if not API_KEYS or API_KEYS[0] == '':
 
 BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
 PASSWORD = os.environ.get('ACCOUNT_PASSWORD', 'Test123!@#')
-REFERER_URL = "https://www.easyhits4u.com/?ref=nicolacaporale"
 
 OUTPUT_DIR = "/tmp/easyhits4u"
 ACCOUNTS_FILE = f"{OUTPUT_DIR}/accounts.json"
@@ -39,128 +38,88 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando browserless - approccio step by step"""
+    """Crea account usando solo evaluate per tutto"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Passo 1: Vai alla pagina e clicca sul link di registrazione
-    step1_query = """
-    mutation {
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {
-        status
-        url
-      }
-      click(selector: "a[href*='join_popup_show']") {
-        clicked
-      }
-      waitFor(selector: "#reg_form", timeout: 30000) {
-        exists
-      }
-    }
+    # Un unico script JavaScript che fa tutto
+    js_script = f"""
+    (async () => {{
+        // 1. Naviga alla pagina
+        window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
+        await new Promise(r => setTimeout(r, 5000));
+        
+        // 2. Clicca sul link di registrazione
+        const joinLink = document.querySelector('a[href*="join_popup_show"]');
+        if (joinLink) {{
+            joinLink.click();
+            await new Promise(r => setTimeout(r, 3000));
+        }}
+        
+        // 3. Attendi il form
+        await new Promise(r => setTimeout(r, 2000));
+        
+        // 4. Compila il form
+        const nameField = document.querySelector('#reg_form #name');
+        if (nameField) nameField.value = '{username}';
+        
+        const emailField = document.querySelector('#reg_form #email');
+        if (emailField) emailField.value = '{email}';
+        
+        const loginField = document.querySelector('#reg_form #login');
+        if (loginField) loginField.value = '{username}';
+        
+        const passField = document.querySelector('#reg_form #pass');
+        if (passField) passField.value = '{PASSWORD}';
+        
+        const cpassField = document.querySelector('#reg_form #cpass');
+        if (cpassField) cpassField.value = '{PASSWORD}';
+        
+        // 5. Attendi che Turnstile venga risolto (se presente)
+        await new Promise(r => setTimeout(r, 5000));
+        
+        // 6. Clicca submit
+        const submitBtn = document.querySelector('#reg_form input[type="submit"]');
+        if (submitBtn) {{
+            submitBtn.click();
+            await new Promise(r => setTimeout(r, 5000));
+        }}
+        
+        // 7. Restituisci i cookie
+        return document.cookie;
+    }})()
+    """
+    
+    query = f"""
+    mutation {{
+      evaluate(expression: {json.dumps(js_script)}, awaitPromise: true, timeout: 120000) {{
+        value
+      }}
+      screenshot(fullPage: true) {{
+        base64
+      }}
+    }}
     """
     
     try:
-        # Step 1: Navigazione e click
-        log("📡 Step 1: Navigazione e apertura form...")
-        response = requests.post(bql_url, json={"query": step1_query}, timeout=60)
+        log("📡 Esecuzione script browserless...")
+        response = requests.post(
+            bql_url,
+            json={"query": query},
+            headers={"Content-Type": "application/json"},
+            timeout=150
+        )
         
         if response.status_code != 200:
-            log(f"❌ Step 1 fallito: {response.status_code}")
-            return None, None
-        
-        data = response.json()
-        if "errors" in data:
-            log(f"❌ Errori Step 1: {data['errors']}")
-            return None, None
-        
-        # Passo 2: Risolvi Turnstile
-        log("🛡️ Step 2: Risoluzione Turnstile...")
-        step2_query = """
-        mutation {
-          solve(type: cloudflare, timeout: 60000) {
-            found
-            solved
-            token
-            time
-          }
-        }
-        """
-        
-        response = requests.post(bql_url, json={"query": step2_query}, timeout=90)
-        
-        if response.status_code != 200:
-            log(f"❌ Step 2 fallito: {response.status_code}")
-            return None, None
-        
-        data = response.json()
-        if "errors" in data:
-            log(f"❌ Errori Step 2: {data['errors']}")
-            return None, None
-        
-        solve_info = data.get("data", {}).get("solve", {})
-        
-        if not solve_info.get("solved"):
-            log("❌ Turnstile non risolto")
-            return None, None
-        
-        log(f"✅ Turnstile risolto in {solve_info.get('time')}ms")
-        
-        # Passo 3: Compila e invia il form
-        log("📝 Step 3: Compilazione e invio form...")
-        
-        # JavaScript per compilare il form - versione semplificata
-        js_code = f"""
-        async () => {{
-          await new Promise(r => setTimeout(r, 1000));
-          
-          const nameField = document.querySelector('#reg_form #name');
-          if (nameField) nameField.value = '{username}';
-          
-          const emailField = document.querySelector('#reg_form #email');
-          if (emailField) emailField.value = '{email}';
-          
-          const loginField = document.querySelector('#reg_form #login');
-          if (loginField) loginField.value = '{username}';
-          
-          const passField = document.querySelector('#reg_form #pass');
-          if (passField) passField.value = '{PASSWORD}';
-          
-          const cpassField = document.querySelector('#reg_form #cpass');
-          if (cpassField) cpassField.value = '{PASSWORD}';
-          
-          await new Promise(r => setTimeout(r, 2000));
-          
-          const submitBtn = document.querySelector('#reg_form input[type="submit"]');
-          if (submitBtn) submitBtn.click();
-          
-          await new Promise(r => setTimeout(r, 5000));
-          
-          return document.cookie;
-        }}
-        """
-        
-        step3_query = f"""
-        mutation {{
-          evaluate(expression: {json.dumps(js_code)}) {{
-            value
-          }}
-          screenshot(fullPage: true) {{
-            base64
-          }}
-        }}
-        """
-        
-        response = requests.post(bql_url, json={"query": step3_query}, timeout=60)
-        
-        if response.status_code != 200:
-            log(f"❌ Step 3 fallito: {response.status_code}")
+            log(f"❌ Errore HTTP: {response.status_code}")
+            log(f"   {response.text[:200]}")
             return None, None
         
         data = response.json()
         
         if "errors" in data:
-            log(f"❌ Errori Step 3: {data['errors']}")
+            log(f"❌ Errori: {data['errors']}")
             return None, None
         
         result = data.get("data", {})
@@ -186,13 +145,11 @@ def create_account_via_browserless(api_key, username, email):
             return True, cookies
         else:
             log(f"❌ Registrazione fallita - user_id non trovato")
-            log(f"   Cookie ricevuti: {list(cookies.keys())}")
+            log(f"   Cookie: {cookies}")
             return False, cookies
             
     except Exception as e:
         log(f"❌ Errore: {e}")
-        import traceback
-        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -225,7 +182,7 @@ def save_account(username, email, cookies):
 
 def main():
     log("=" * 60)
-    log("🚀 BROWSERLESS ACCOUNT CREATOR (STEP BY STEP)")
+    log("🚀 BROWSERLESS ACCOUNT CREATOR (SINGLE SCRIPT)")
     log("=" * 60)
     
     setup_output_dir()
