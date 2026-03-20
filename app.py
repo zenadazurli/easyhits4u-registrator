@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione con API REST di browserless
+# app.py - Versione finale con sintassi GraphQL corretta
 
 import requests
 import json
@@ -18,7 +18,7 @@ if not API_KEYS or API_KEYS[0] == '':
         "2UBQ5qEPkTsCBv63a4077ae6c54e5490f1efd231f724e110f",
     ]
 
-BROWSERLESS_URL = "https://production-sfo.browserless.io"
+BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
 PASSWORD = os.environ.get('ACCOUNT_PASSWORD', 'Test123!@#')
 
 OUTPUT_DIR = "/tmp/easyhits4u"
@@ -36,64 +36,73 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando API REST di browserless"""
+    """Crea account usando browserless GraphQL"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
-    # Usa l'endpoint REST /function
-    url = f"{BROWSERLESS_URL}/function?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
+    bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Script JavaScript che fa tutto
-    js_code = f"""
-    const puppeteer = require('puppeteer-core');
-    
-    async function run() {{
-        const browser = await puppeteer.connect({{ browserWSEndpoint: process.env.BROWSER_WS_ENDPOINT }});
-        const page = await browser.newPage();
-        
-        // Naviga alla pagina
-        await page.goto('https://www.easyhits4u.com/?ref=nicolacaporale', {{ waitUntil: 'networkidle2', timeout: 60000 }});
-        
-        // Clicca sul link di registrazione
-        await page.click('a[href*="join_popup_show"]');
-        await page.waitForTimeout(3000);
-        
-        // Compila il form
-        await page.type('#reg_form #name', '{username}');
-        await page.type('#reg_form #email', '{email}');
-        await page.type('#reg_form #login', '{username}');
-        await page.type('#reg_form #pass', '{PASSWORD}');
-        await page.type('#reg_form #cpass', '{PASSWORD}');
-        
-        // Attendi Turnstile
-        await page.waitForTimeout(15000);
-        
-        // Clicca submit
-        await page.click('#reg_form input[type="submit"]');
-        await page.waitForTimeout(5000);
-        
-        // Ottieni cookie
-        const cookies = await page.cookies();
-        const cookieString = cookies.map(c => `${{c.name}}=${{c.value}}`).join(';');
-        
-        // Screenshot
-        await page.screenshot({{ path: 'screenshot.png', fullPage: true }});
-        
-        await browser.close();
-        
-        return cookieString;
+    # Script JavaScript SENZA async/await (usa Promise)
+    js_script = f"""
+    () => {{
+        return new Promise(async (resolve) => {{
+            window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
+            setTimeout(async () => {{
+                const joinLink = document.querySelector('a[href*="join_popup_show"]');
+                if (joinLink) joinLink.click();
+                
+                setTimeout(async () => {{
+                    const nameField = document.querySelector('#reg_form #name');
+                    if (nameField) nameField.value = '{username}';
+                    
+                    const emailField = document.querySelector('#reg_form #email');
+                    if (emailField) emailField.value = '{email}';
+                    
+                    const loginField = document.querySelector('#reg_form #login');
+                    if (loginField) loginField.value = '{username}';
+                    
+                    const passField = document.querySelector('#reg_form #pass');
+                    if (passField) passField.value = '{PASSWORD}';
+                    
+                    const cpassField = document.querySelector('#reg_form #cpass');
+                    if (cpassField) cpassField.value = '{PASSWORD}';
+                    
+                    setTimeout(async () => {{
+                        const submitBtn = document.querySelector('#reg_form input[type="submit"]');
+                        if (submitBtn) submitBtn.click();
+                        
+                        setTimeout(() => {{
+                            resolve(document.cookie);
+                        }}, 8000);
+                    }}, 15000);
+                }}, 3000);
+            }}, 5000);
+        }});
     }}
+    """
     
-    module.exports = run;
+    query = f"""
+    mutation {{
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle) {{
+        status
+        url
+      }}
+      evaluate(script: {json.dumps(js_script)}) {{
+        value
+      }}
+      screenshot(fullPage: true) {{
+        base64
+      }}
+    }}
     """
     
     try:
-        log("📡 Invio richiesta a browserless REST API...")
+        log("📡 Invio richiesta...")
         start_time = time.time()
         
         response = requests.post(
-            url,
-            data=js_code,
-            headers={"Content-Type": "application/javascript"},
+            bql_url,
+            json={"query": query},
+            headers={"Content-Type": "application/json"},
             timeout=180
         )
         
@@ -102,25 +111,43 @@ def create_account_via_browserless(api_key, username, email):
         
         if response.status_code != 200:
             log(f"❌ Errore HTTP: {response.status_code}")
-            log(f"   Risposta: {response.text[:500]}")
+            log(f"   {response.text[:500]}")
             return None, None
         
-        cookies_str = response.text.strip()
+        data = response.json()
         
-        # Parsing cookie
+        if "errors" in data:
+            error_msg = data['errors'][0].get('message', 'Unknown error')
+            log(f"❌ Errore: {error_msg}")
+            return None, None
+        
+        result = data.get("data", {})
+        
+        # Ottieni cookie
+        evaluate_result = result.get("evaluate", {})
+        cookies_str = evaluate_result.get("value", "")
+        
         cookies = {}
         for cookie in cookies_str.split(";"):
             if "=" in cookie:
                 key, val = cookie.strip().split("=", 1)
                 cookies[key] = val
         
-        log(f"🔑 Cookie keys: {list(cookies.keys())}")
+        log(f"🔑 Cookie ricevuti: {list(cookies.keys())}")
+        
+        # Salva screenshot
+        screenshot_data = result.get("screenshot", {}).get("base64")
+        if screenshot_data:
+            filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
+            with open(filename, "wb") as f:
+                f.write(base64.b64decode(screenshot_data))
+            log(f"📸 Screenshot salvato")
         
         if 'user_id' in cookies:
             log(f"✅✅✅ REGISTRAZIONE RIUSCITA! user_id: {cookies['user_id']}")
             return True, cookies
         else:
-            log(f"❌ Registrazione fallita - user_id non trovato")
+            log(f"❌ Registrazione fallita")
             return False, cookies
             
     except Exception as e:
@@ -160,7 +187,7 @@ def save_account(username, email, cookies):
 
 def main():
     log("=" * 60)
-    log("🚀 BROWSERLESS ACCOUNT CREATOR (REST API)")
+    log("🚀 BROWSERLESS ACCOUNT CREATOR")
     log("=" * 60)
     
     setup_output_dir()
