@@ -1,0 +1,15 @@
+services:
+  - type: cron
+    name: easyhits4u-registrator
+    runtime: image
+    repo: https://github.com/tuo-username/easyhits4u-registrator
+    region: frankfurt
+    schedule: "0 */6 * * *"  # Ogni 6 ore
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: BROWSERLESS_KEYS
+        value: "2UBQ5qEPkTsCBv63a4077ae6c54e5490f1efd231f724e110f,2UBQ8GwsajXwbXs10e72471480af4adaeb28a5a6a01ac89a7,2UBQFmSYHD4NZGdb2f0eedc0e05b5de53a6746218bcdc139a"
+      - key: ACCOUNT_PASSWORD
+        value: "Test123!@#"
+      - key: NUM_ACCOUNTS
+        value: "1"
