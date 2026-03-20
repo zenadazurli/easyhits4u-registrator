@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione con query invece di mutation
+# app.py - Versione con API REST di browserless
 
 import requests
 import json
@@ -18,7 +18,7 @@ if not API_KEYS or API_KEYS[0] == '':
         "2UBQ5qEPkTsCBv63a4077ae6c54e5490f1efd231f724e110f",
     ]
 
-BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
+BROWSERLESS_URL = "https://production-sfo.browserless.io"
 PASSWORD = os.environ.get('ACCOUNT_PASSWORD', 'Test123!@#')
 
 OUTPUT_DIR = "/tmp/easyhits4u"
@@ -36,72 +36,64 @@ def generate_username():
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando browserless"""
+    """Crea account usando API REST di browserless"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
-    bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
+    # Usa l'endpoint REST /function
+    url = f"{BROWSERLESS_URL}/function?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    # Proviamo con query invece di mutation
-    # E usiamo solo evaluate per tutto
-    js_script = f"""
-    (async () => {{
-        // Navigazione
-        window.location.href = 'https://www.easyhits4u.com/?ref=nicolacaporale';
-        await new Promise(r => setTimeout(r, 8000));
+    # Script JavaScript che fa tutto
+    js_code = f"""
+    const puppeteer = require('puppeteer-core');
+    
+    async function run() {{
+        const browser = await puppeteer.connect({{ browserWSEndpoint: process.env.BROWSER_WS_ENDPOINT }});
+        const page = await browser.newPage();
         
-        // Clicca join
-        const joinLink = document.querySelector('a[href*="join_popup_show"]');
-        if (joinLink) joinLink.click();
-        await new Promise(r => setTimeout(r, 5000));
+        // Naviga alla pagina
+        await page.goto('https://www.easyhits4u.com/?ref=nicolacaporale', {{ waitUntil: 'networkidle2', timeout: 60000 }});
         
-        // Compila form
-        const nameField = document.querySelector('#reg_form #name');
-        if (nameField) nameField.value = '{username}';
+        // Clicca sul link di registrazione
+        await page.click('a[href*="join_popup_show"]');
+        await page.waitForTimeout(3000);
         
-        const emailField = document.querySelector('#reg_form #email');
-        if (emailField) emailField.value = '{email}';
-        
-        const loginField = document.querySelector('#reg_form #login');
-        if (loginField) loginField.value = '{username}';
-        
-        const passField = document.querySelector('#reg_form #pass');
-        if (passField) passField.value = '{PASSWORD}';
-        
-        const cpassField = document.querySelector('#reg_form #cpass');
-        if (cpassField) cpassField.value = '{PASSWORD}';
+        // Compila il form
+        await page.type('#reg_form #name', '{username}');
+        await page.type('#reg_form #email', '{email}');
+        await page.type('#reg_form #login', '{username}');
+        await page.type('#reg_form #pass', '{PASSWORD}');
+        await page.type('#reg_form #cpass', '{PASSWORD}');
         
         // Attendi Turnstile
-        await new Promise(r => setTimeout(r, 15000));
+        await page.waitForTimeout(15000);
         
-        // Submit
-        const submitBtn = document.querySelector('#reg_form input[type="submit"]');
-        if (submitBtn) submitBtn.click();
-        await new Promise(r => setTimeout(r, 8000));
+        // Clicca submit
+        await page.click('#reg_form input[type="submit"]');
+        await page.waitForTimeout(5000);
         
-        return document.cookie;
-    }})()
-    """
-    
-    # Usa query invece di mutation
-    query = f"""
-    query {{
-      evaluate(script: {json.dumps(js_script)}) {{
-        value
-      }}
-      screenshot(fullPage: true) {{
-        base64
-      }}
+        // Ottieni cookie
+        const cookies = await page.cookies();
+        const cookieString = cookies.map(c => `${{c.name}}=${{c.value}}`).join(';');
+        
+        // Screenshot
+        await page.screenshot({{ path: 'screenshot.png', fullPage: true }});
+        
+        await browser.close();
+        
+        return cookieString;
     }}
+    
+    module.exports = run;
     """
     
     try:
-        log("📡 Invio richiesta a browserless...")
+        log("📡 Invio richiesta a browserless REST API...")
         start_time = time.time()
         
         response = requests.post(
-            bql_url,
-            json={"query": query},
-            headers={"Content-Type": "application/json"},
+            url,
+            data=js_code,
+            headers={"Content-Type": "application/javascript"},
             timeout=180
         )
         
@@ -113,19 +105,9 @@ def create_account_via_browserless(api_key, username, email):
             log(f"   Risposta: {response.text[:500]}")
             return None, None
         
-        data = response.json()
+        cookies_str = response.text.strip()
         
-        if "errors" in data:
-            error_msg = data['errors'][0].get('message', 'Unknown error')
-            log(f"❌ Errore GraphQL: {error_msg}")
-            return None, None
-        
-        result = data.get("data", {})
-        
-        # Ottieni cookie
-        evaluate_result = result.get("evaluate", {})
-        cookies_str = evaluate_result.get("value", "")
-        
+        # Parsing cookie
         cookies = {}
         for cookie in cookies_str.split(";"):
             if "=" in cookie:
@@ -133,14 +115,6 @@ def create_account_via_browserless(api_key, username, email):
                 cookies[key] = val
         
         log(f"🔑 Cookie keys: {list(cookies.keys())}")
-        
-        # Salva screenshot
-        screenshot_data = result.get("screenshot", {}).get("base64")
-        if screenshot_data:
-            filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
-            with open(filename, "wb") as f:
-                f.write(base64.b64decode(screenshot_data))
-            log(f"📸 Screenshot salvato")
         
         if 'user_id' in cookies:
             log(f"✅✅✅ REGISTRAZIONE RIUSCITA! user_id: {cookies['user_id']}")
@@ -151,6 +125,8 @@ def create_account_via_browserless(api_key, username, email):
             
     except Exception as e:
         log(f"❌ Errore: {e}")
+        import traceback
+        traceback.print_exc()
         return None, None
 
 def save_account(username, email, cookies):
@@ -184,7 +160,7 @@ def save_account(username, email, cookies):
 
 def main():
     log("=" * 60)
-    log("🚀 BROWSERLESS ACCOUNT CREATOR")
+    log("🚀 BROWSERLESS ACCOUNT CREATOR (REST API)")
     log("=" * 60)
     
     setup_output_dir()
