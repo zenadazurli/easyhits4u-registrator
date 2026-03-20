@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# app.py - Versione per Render con rotazione API key
+# app.py - Versione per Render con sintassi corretta
 
 import requests
 import json
@@ -11,10 +11,8 @@ from datetime import datetime
 from pathlib import Path
 
 # ==================== CONFIGURAZIONE ====================
-# Prendi le API key dalle variabili d'ambiente di Render
 API_KEYS = os.environ.get('BROWSERLESS_KEYS', '').split(',')
 
-# Se non ci sono variabili d'ambiente, usa quelle di default (per test locale)
 if not API_KEYS or API_KEYS[0] == '':
     API_KEYS = [
         "2UBQ5qEPkTsCBv63a4077ae6c54e5490f1efd231f724e110f",
@@ -26,7 +24,6 @@ BROWSERLESS_URL = "https://production-sfo.browserless.io/chrome/bql"
 PASSWORD = os.environ.get('ACCOUNT_PASSWORD', 'Test123!@#')
 REFERER_URL = "https://www.easyhits4u.com/?ref=nicolacaporale"
 
-# File di output su Render (usando /tmp per storage temporaneo)
 OUTPUT_DIR = "/tmp/easyhits4u"
 ACCOUNTS_FILE = f"{OUTPUT_DIR}/accounts.json"
 ACCOUNTS_TXT = f"{OUTPUT_DIR}/accounts.txt"
@@ -36,96 +33,51 @@ def log(msg):
     print(f"[{timestamp}] {msg}", flush=True)
 
 def setup_output_dir():
-    """Crea directory di output"""
     Path(OUTPUT_DIR).mkdir(parents=True, exist_ok=True)
 
 def generate_username():
-    """Genera username casuale"""
     syllables = ["ka","lo","mi","ta","ne","za","ga","ra","chi","lu","no","be","ce","re","di","sa"]
     count = random.randint(3, 5)
     return "u" + "".join(random.choice(syllables) for _ in range(count))
 
 def create_account_via_browserless(api_key, username, email):
-    """Crea account usando browserless"""
     log(f"🔑 Usando API key: {api_key[:20]}...")
     
     bql_url = f"{BROWSERLESS_URL}?token={api_key}&stealth=true&proxy=residential&proxyCountry=it"
     
-    query = """
-    mutation {
-      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {
+    # La stringa JavaScript deve essere su una riga singola per evitare problemi di indentazione
+    js_function = "async () => { await new Promise(r => setTimeout(r, 2000)); const usernameField = document.querySelector('#reg_form #name'); if (usernameField) { usernameField.value = arguments[0]; usernameField.dispatchEvent(new Event('input', { bubbles: true })); } const emailField = document.querySelector('#reg_form #email'); if (emailField) { emailField.value = arguments[1]; emailField.dispatchEvent(new Event('input', { bubbles: true })); } const loginField = document.querySelector('#reg_form #login'); if (loginField) { loginField.value = arguments[0]; loginField.dispatchEvent(new Event('input', { bubbles: true })); } const passField = document.querySelector('#reg_form #pass'); if (passField) { passField.value = arguments[2]; passField.dispatchEvent(new Event('input', { bubbles: true })); } const cpassField = document.querySelector('#reg_form #cpass'); if (cpassField) { cpassField.value = arguments[2]; cpassField.dispatchEvent(new Event('input', { bubbles: true })); } await new Promise(r => setTimeout(r, 3000)); const submitBtn = document.querySelector('#reg_form input[type=\"submit\"], #reg_form button[type=\"submit\"]'); if (submitBtn) { submitBtn.click(); } await new Promise(r => setTimeout(r, 5000)); return document.cookie; }"
+    
+    query = f"""
+    mutation {{
+      goto(url: "https://www.easyhits4u.com/?ref=nicolacaporale", waitUntil: networkIdle, timeout: 60000) {{
         status
         url
-      }
+      }}
       
-      click(selector: "a[href*='join_popup_show']") {
+      click(selector: "a[href*='join_popup_show']") {{
         clicked
-      }
+      }}
       
-      waitFor(selector: "#reg_form", timeout: 30000) {
+      waitFor(selector: "#reg_form", timeout: 30000) {{
         exists
-      }
+      }}
       
-      solve(type: cloudflare, timeout: 60000) {
+      solve(type: cloudflare, timeout: 60000) {{
         found
         solved
         token
         time
-      }
+      }}
       
-      evaluate(expression: """
-        async () => {
-          await new Promise(r => setTimeout(r, 2000));
-          
-          const usernameField = document.querySelector('#reg_form #name');
-          if (usernameField) {
-            usernameField.value = arguments[0];
-            usernameField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          
-          const emailField = document.querySelector('#reg_form #email');
-          if (emailField) {
-            emailField.value = arguments[1];
-            emailField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          
-          const loginField = document.querySelector('#reg_form #login');
-          if (loginField) {
-            loginField.value = arguments[0];
-            loginField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          
-          const passField = document.querySelector('#reg_form #pass');
-          if (passField) {
-            passField.value = arguments[2];
-            passField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          
-          const cpassField = document.querySelector('#reg_form #cpass');
-          if (cpassField) {
-            cpassField.value = arguments[2];
-            cpassField.dispatchEvent(new Event('input', { bubbles: true }));
-          }
-          
-          await new Promise(r => setTimeout(r, 3000));
-          
-          const submitBtn = document.querySelector('#reg_form input[type="submit"], #reg_form button[type="submit"]');
-          if (submitBtn) {
-            submitBtn.click();
-          }
-          
-          await new Promise(r => setTimeout(r, 5000));
-          
-          return document.cookie;
-        }
-      """, args: [\"""" + username + """\", \"""" + email + """\", \"""" + PASSWORD + """\"]) {
+      evaluate(expression: "{js_function}", args: ["{username}", "{email}", "{PASSWORD}"]) {{
         value
-      }
+      }}
       
-      screenshot(fullPage: true) {
+      screenshot(fullPage: true) {{
         base64
-      }
-    }
+      }}
+    }}
     """
     
     try:
@@ -138,6 +90,7 @@ def create_account_via_browserless(api_key, username, email):
         
         if response.status_code != 200:
             log(f"❌ Errore HTTP: {response.status_code}")
+            log(f"   {response.text[:200]}")
             return None, None
         
         data = response.json()
@@ -148,7 +101,6 @@ def create_account_via_browserless(api_key, username, email):
         
         result = data.get("data", {})
         
-        # Ottieni cookie
         cookies_str = result.get("evaluate", {}).get("value", "")
         cookies = {}
         for cookie in cookies_str.split(";"):
@@ -156,7 +108,6 @@ def create_account_via_browserless(api_key, username, email):
                 key, val = cookie.strip().split("=", 1)
                 cookies[key] = val
         
-        # Salva screenshot
         screenshot_data = result.get("screenshot", {}).get("base64")
         if screenshot_data:
             filename = f"{OUTPUT_DIR}/screenshot_{username}_{int(time.time())}.png"
@@ -176,7 +127,6 @@ def create_account_via_browserless(api_key, username, email):
         return None, None
 
 def save_account(username, email, cookies):
-    """Salva account"""
     account_data = {
         "username": username,
         "email": email,
@@ -186,7 +136,6 @@ def save_account(username, email, cookies):
         "timestamp": datetime.now().isoformat()
     }
     
-    # Salva in JSON
     accounts = []
     if Path(ACCOUNTS_FILE).exists():
         with open(ACCOUNTS_FILE, "r") as f:
@@ -200,7 +149,6 @@ def save_account(username, email, cookies):
     with open(ACCOUNTS_FILE, "w") as f:
         json.dump(accounts, f, indent=2)
     
-    # Salva in TXT
     with open(ACCOUNTS_TXT, "a") as f:
         f.write(f"{email} | {PASSWORD} | user_id: {cookies.get('user_id')}\n")
     
@@ -213,7 +161,6 @@ def main():
     
     setup_output_dir()
     
-    # Determina quanti account creare
     try:
         num_accounts = int(os.environ.get('NUM_ACCOUNTS', '1'))
     except:
@@ -235,11 +182,12 @@ def main():
         log(f"👤 Username: {username}")
         log(f"📧 Email: {email}")
         
-        # Prova con diverse API key
         success = False
         for api_key in API_KEYS:
-            success, cookies = create_account_via_browserless(api_key.strip(), username, email)
-            if success and cookies and 'user_id' in cookies:
+            if not api_key.strip():
+                continue
+            result, cookies = create_account_via_browserless(api_key.strip(), username, email)
+            if result and cookies and 'user_id' in cookies:
                 save_account(username, email, cookies)
                 success_count += 1
                 success = True
@@ -251,7 +199,6 @@ def main():
         if not success:
             log(f"❌ Account {i+1} fallito")
         
-        # Pausa tra account
         if i < num_accounts - 1:
             pause = random.randint(30, 60)
             log(f"⏸️ Pausa di {pause} secondi...")
