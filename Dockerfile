@@ -2,20 +2,11 @@ FROM python:3.11-slim
 
 WORKDIR /app
 
-# Installa dipendenze di sistema necessarie
-RUN apt-get update && apt-get install -y \
-    curl \
-    && rm -rf /var/lib/apt/lists/*
-
-# Copia requirements e installa
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-# Copia il codice
-COPY app.py .
+COPY api.py .
 
-# Crea directory per output
-RUN mkdir -p /tmp/easyhits4u
+EXPOSE 10000
 
-# Esegui lo script
-CMD ["python", "app.py"]
+CMD ["uvicorn", "api:app", "--host", "0.0.0.0", "--port", "10000"]
